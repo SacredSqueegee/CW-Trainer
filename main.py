@@ -122,23 +122,43 @@ class MorseCodeStudySession:
             }
     
     def generate_round_sequence(self):
-        # If we have statistics, weight the selection toward problematic characters
+        # If we have statistics, calculate difficulty scores
         if any(self.stats[char]['attempts'] > 0 for char in self.characters):
-            # Calculate error rates
-            error_rates = {}
+            # Calculate difficulty scores based on error rate and response time
+            difficulty_scores = {}
             for char in self.characters:
-                if self.stats[char]['attempts'] > 0:
-                    error_rate = 1.0 - (self.stats[char]['correct'] / self.stats[char]['attempts'])
-                    error_rates[char] = error_rate + 0.1  # Add small base probability
-                else:
-                    error_rates[char] = 0.5  # Default for characters with no attempts
+                stats = self.stats[char]
+                attempts = stats['attempts']
+                correct = stats['correct']
+                response_times = stats['response_times']
+                
+                # Calculate error rate (default to 0.5 if no attempts)
+                error_rate = 1.0 - (correct / attempts) if attempts > 0 else 0.5
+                
+                # Calculate average response time (default to 1.0 second if no data)
+                avg_response_time = sum(response_times) / len(response_times) if response_times else 1.0
+                
+                # Combine error rate and response time into a single difficulty score
+                difficulty_scores[char] = error_rate + avg_response_time
             
-            # Normalize to create probabilities
-            total = sum(error_rates.values())
-            probabilities = [error_rates[char] / total for char in self.characters]
+            # Normalize difficulty scores
+            max_score = max(difficulty_scores.values())
+            normalized_scores = {char: score / max_score for char, score in difficulty_scores.items()}
+            
+            # Add baseline probability to ensure all characters are included
+            baseline_probability = 0.1
+            total_weight = sum(normalized_scores.values()) + baseline_probability * len(self.characters)
+            probabilities = {
+                char: (normalized_scores[char] + baseline_probability) / total_weight
+                for char in self.characters
+            }
             
             # Generate weighted random selection
-            sequence = random.choices(self.characters, weights=probabilities, k=self.round_size)
+            sequence = random.choices(
+                population=self.characters,
+                weights=[probabilities[char] for char in self.characters],
+                k=self.round_size
+            )
         else:
             # For the first round, just randomly select characters
             sequence = [random.choice(self.characters) for _ in range(self.round_size)]
